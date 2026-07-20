@@ -156,7 +156,22 @@ async def get_document(
     doc = result.scalars().first()
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-    return doc
+    return {
+        "id": doc.id,
+        "user_id": doc.user_id,
+        "filename": doc.filename,
+        "file_path": doc.file_path,
+        "file_size": doc.file_size,
+        "created_at": doc.created_at,
+        "is_favorite": doc.is_favorite,
+        "summary_executive": doc.summary_executive,
+        "summary_detailed": doc.summary_detailed,
+        "summary_bullet": doc.summary_bullet,
+        "analysis_takeaways": doc.analysis_takeaways,
+        "analysis_entities": doc.analysis_entities,
+        "analysis_faq": doc.analysis_faq,
+        "metrics": doc.metrics,
+    }
 
 @router.delete("/{doc_id}")
 async def delete_document(

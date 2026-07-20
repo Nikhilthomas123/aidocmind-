@@ -29,8 +29,9 @@ export const History: React.FC = () => {
       const response = await axios.get('/api/documents');
       setDocuments(response.data);
     } catch (err: any) {
-      console.error(err);
-      setToastMessage('Failed to fetch documents.');
+      console.error('Fetch documents error:', err);
+      const detail = err.response?.data?.detail;
+      setToastMessage(detail ? `Failed to fetch documents: ${detail}` : 'Failed to fetch documents. Backend server may be offline.');
       setToastType('error');
       setToastVisible(true);
     } finally {
