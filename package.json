@@ -1,0 +1,13 @@
+{
+  "name": "docmind-ai-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Root helper workspace for DocMind AI",
+  "scripts": {
+    "install:all": "npm install --prefix frontend",
+    "frontend:dev": "npm run dev --prefix frontend",
+    "frontend:build": "npm run build --prefix frontend",
+    "docker:up": "docker-compose up --build",
+    "docker:down": "docker-compose down"
+  }
+}
