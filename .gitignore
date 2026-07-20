@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/venv/
+venv/
+ENV/
+env/
+
+# Environment files
+.env
+backend/.env
+.env.local
+.env.*.local
+
+# Python cache & compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+backend/__pycache__/
+backend/*/__pycache__/
+
+# Build outputs
+dist/
+frontend/dist/
+build/
+
+# Uploads & User runtime files
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# IDE & OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
