@@ -36,10 +36,18 @@ export const AISummary: React.FC = () => {
         const response = await axios.get(`/api/documents/${id}`);
         setDocName(response.data.filename);
         
+        let hasExec = false;
         // Load pre-existing summaries if any
-        if (response.data.summary_executive) setExecutive(response.data.summary_executive);
+        if (response.data.summary_executive) {
+          setExecutive(response.data.summary_executive);
+          hasExec = true;
+        }
         if (response.data.summary_detailed) setDetailed(response.data.summary_detailed);
         if (response.data.summary_bullet) setBullet(response.data.summary_bullet);
+
+        if (!hasExec) {
+          triggerStream('executive');
+        }
       } catch (err: any) {
         console.error(err);
         setToastMessage('Failed to load document info.');
@@ -81,26 +89,34 @@ export const AISummary: React.FC = () => {
       if (!reader) return;
 
       let resultText = '';
+      let buffer = '';
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
-        const chunk = decoder.decode(value, { stream: true });
-        // Clean out SSE formatting prefixes if any (e.g. data: text)
-        const lines = chunk.split('\n');
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const cleanText = line.substring(6);
-            if (cleanText === '[DONE]') {
-              break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+
+        for (const part of parts) {
+          const lines = part.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const cleanText = line.substring(6);
+              if (cleanText === '[DONE]') break;
+              resultText += cleanText;
+              setter(resultText);
             }
-            resultText += cleanText;
-            setter(resultText);
-          } else if (line.trim() !== '') {
-            // fallback for raw streams
-            resultText += line;
-            setter(resultText);
           }
+        }
+      }
+
+      if (buffer.trim().startsWith('data: ')) {
+        const cleanText = buffer.trim().substring(6);
+        if (cleanText !== '[DONE]') {
+          resultText += cleanText;
+          setter(resultText);
         }
       }
     } catch (err: any) {

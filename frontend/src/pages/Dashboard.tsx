@@ -161,7 +161,7 @@ export const Dashboard: React.FC = () => {
           </div>
           <div>
             <h3 className="text-lg font-bold text-slate-200 font-['Outfit']">Document Analysis</h3>
-            <p className="text-xs text-slate-400 mt-1">Audit sentiment, tone, keywords, glossary, and改进.</p>
+            <p className="text-xs text-slate-400 mt-1">Audit sentiment, tone, keywords, glossary, and key takeaways.</p>
           </div>
         </Link>
 

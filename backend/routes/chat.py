@@ -53,10 +53,11 @@ async def send_chat_message(
     history_result = await db.execute(
         select(ChatMessage)
         .where(ChatMessage.session_id == session.id)
-        .order_by(ChatMessage.created_at.asc())
+        .order_by(ChatMessage.created_at.desc())
         .limit(10)
     )
-    history_msgs = history_result.scalars().all()
+    history_msgs = list(history_result.scalars().all())
+    history_msgs.reverse()
     chat_history = [{"role": m.role, "content": m.content} for m in history_msgs]
 
     # 4. Generate query embedding vector
@@ -118,3 +119,27 @@ async def list_chat_sessions(
         .order_by(ChatSession.created_at.desc())
     )
     return result.scalars().all()
+
+@router.get("/history/{doc_id}")
+async def get_chat_history(
+    doc_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    session_result = await db.execute(
+        select(ChatSession)
+        .where(ChatSession.document_id == doc_id, ChatSession.user_id == current_user.id)
+        .order_by(ChatSession.created_at.desc())
+    )
+    session = session_result.scalars().first()
+    if not session:
+        return []
+
+    messages_result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.session_id == session.id)
+        .order_by(ChatMessage.created_at.asc())
+    )
+    messages = messages_result.scalars().all()
+    return [{"role": m.role, "content": m.content} for m in messages]
+

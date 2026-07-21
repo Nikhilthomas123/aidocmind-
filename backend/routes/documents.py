@@ -1,6 +1,8 @@
 import os
 import uuid
 import logging
+import re
+import html
 from io import BytesIO
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Query, Header
@@ -230,7 +232,7 @@ async def extract_document_metrics(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     chunks_result = await db.execute(
-        select(DocumentChunk).where(DocumentChunk.document_id == doc_id).limit(5)
+        select(DocumentChunk).where(DocumentChunk.document_id == doc_id).order_by(DocumentChunk.id.asc()).limit(5)
     )
     chunks = chunks_result.scalars().all()
     sample_text = "\n".join([c.content for c in chunks])
@@ -259,7 +261,7 @@ async def stream_document_summary(
 
     # Fetch chunks
     chunks_result = await db.execute(
-        select(DocumentChunk).where(DocumentChunk.document_id == doc_id)
+        select(DocumentChunk).where(DocumentChunk.document_id == doc_id).order_by(DocumentChunk.id.asc())
     )
     chunks = chunks_result.scalars().all()
     full_text = "\n".join([c.content for c in chunks])
@@ -306,7 +308,7 @@ async def stream_document_analysis(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     chunks_result = await db.execute(
-        select(DocumentChunk).where(DocumentChunk.document_id == doc_id)
+        select(DocumentChunk).where(DocumentChunk.document_id == doc_id).order_by(DocumentChunk.id.asc())
     )
     chunks = chunks_result.scalars().all()
     full_text = "\n".join([c.content for c in chunks])
@@ -338,6 +340,7 @@ async def stream_document_analysis(
 async def stream_ai_tool(
     doc_id: int,
     tool: str = "quiz",
+    difficulty: Optional[str] = "Medium",
     language: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -351,13 +354,13 @@ async def stream_ai_tool(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     chunks_result = await db.execute(
-        select(DocumentChunk).where(DocumentChunk.document_id == doc_id)
+        select(DocumentChunk).where(DocumentChunk.document_id == doc_id).order_by(DocumentChunk.id.asc())
     )
     chunks = chunks_result.scalars().all()
     full_pdf_text = "\n".join([c.content for c in chunks])
 
     async def event_generator():
-        async for chunk in ai_service.stream_extra_tool(full_pdf_text, tool, language, user_key=x_openai_key):
+        async for chunk in ai_service.stream_extra_tool(full_pdf_text, tool, difficulty=difficulty, language=language, user_key=x_openai_key):
             yield f"data: {chunk}\n\n"
         yield "data: [DONE]\n\n"
 
@@ -474,17 +477,33 @@ async def export_document(
         )
         
         story = []
+        safe_filename = html.escape(doc.filename)
         story.append(Paragraph("DocMind AI Analysis Report", title_style))
-        story.append(Paragraph(f"<b>Document Source:</b> {doc.filename}", body_style))
+        story.append(Paragraph(f"<b>Document Source:</b> {safe_filename}", body_style))
         story.append(Paragraph(f"<b>Classification Type:</b> {type.upper()} SUMMARY", body_style))
         story.append(Spacer(1, 15))
         
-        # Clean formatting tags
+        # Clean formatting tags for ReportLab XML compatibility
         paragraphs = summary_text.split("\n\n")
         for para in paragraphs:
-            if para.strip() != "":
-                clean_para = para.replace("\n", "<br/>").replace("**", "<b>").replace("<b>", "</b>", 1) # Simple markdown cleanup
-                story.append(Paragraph(clean_para, body_style))
+            para_str = para.strip()
+            if para_str:
+                # Escape XML special characters first
+                clean = html.escape(para_str)
+                # Replace markdown headers ###, ##, #
+                clean = re.sub(r'^#{1,6}\s*(.*)', r'<b>\1</b>', clean)
+                # Replace bold markdown **text**
+                clean = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', clean)
+                # Replace italic markdown *text*
+                clean = re.sub(r'\*(.*?)\*', r'<i>\1</i>', clean)
+                # Replace newline with break
+                clean = clean.replace("\n", "<br/>")
+                
+                try:
+                    story.append(Paragraph(clean, body_style))
+                except Exception:
+                    # Fallback to plain text if XML parsing still fails
+                    story.append(Paragraph(html.escape(para_str).replace("\n", "<br/>"), body_style))
                 story.append(Spacer(1, 10))
 
         pdf.build(story)

@@ -40,20 +40,25 @@ export const AIChat: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const fetchDocInfo = async () => {
+    const fetchDocInfoAndHistory = async () => {
       try {
-        const response = await axios.get(`/api/documents/${id}`);
-        setDocName(response.data.filename);
+        const docRes = await axios.get(`/api/documents/${id}`);
+        setDocName(docRes.data.filename);
+
+        const historyRes = await axios.get(`/api/chat/history/${id}`);
+        if (Array.isArray(historyRes.data) && historyRes.data.length > 0) {
+          setMessages(historyRes.data);
+        }
       } catch (err: any) {
         console.error(err);
-        setToastMessage('Failed to load document info.');
+        setToastMessage('Failed to load document or history info.');
         setToastType('error');
         setToastVisible(true);
       }
     };
 
     if (id) {
-      fetchDocInfo();
+      fetchDocInfoAndHistory();
     }
   }, [id]);
 
@@ -107,22 +112,33 @@ export const AIChat: React.FC = () => {
       if (!reader) return;
 
       let resultText = '';
+      let buffer = '';
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const cleanText = line.substring(6);
-            if (cleanText === '[DONE]') break;
-            resultText += cleanText;
-            setStreamingMessage(resultText);
-          } else if (line.trim() !== '') {
-            resultText += line;
-            setStreamingMessage(resultText);
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+
+        for (const part of parts) {
+          const lines = part.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const cleanText = line.substring(6);
+              if (cleanText === '[DONE]') break;
+              resultText += cleanText;
+              setStreamingMessage(resultText);
+            }
           }
+        }
+      }
+
+      if (buffer.trim().startsWith('data: ')) {
+        const cleanText = buffer.trim().substring(6);
+        if (cleanText !== '[DONE]') {
+          resultText += cleanText;
         }
       }
 
