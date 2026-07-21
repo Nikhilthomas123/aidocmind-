@@ -1,0 +1,78 @@
+name: Build and Deploy to AWS App Runner
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy Application
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: aidocmind
+          IMAGE_TAG: latest
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Deploy to AWS App Runner
+        run: |
+          SERVICE_NAME="aidocmind-service"
+          
+          # Check if App Runner service already exists
+          SERVICE_ARN=$(aws apprunner list-services --region us-east-1 --query "ServiceSummaryList[?ServiceName=='$SERVICE_NAME'].ServiceArn" --output text)
+          
+          if [ -n "$SERVICE_ARN" ] && [ "$SERVICE_ARN" != "None" ]; then
+            echo "Service already exists. Starting a new deployment..."
+            aws apprunner start-deployment --service-arn "$SERVICE_ARN" --region us-east-1
+          else
+            echo "Service does not exist. Creating a new App Runner service..."
+            aws apprunner create-service \
+              --service-name "$SERVICE_NAME" \
+              --source-configuration '{
+                "ImageRepository": {
+                  "ImageIdentifier": "390281679530.dkr.ecr.us-east-1.amazonaws.com/aidocmind:latest",
+                  "ImageRepositoryType": "ECR",
+                  "ImageConfiguration": {
+                    "Port": "8080",
+                    "RuntimeEnvironmentSecrets": {
+                      "DATABASE_URL": "arn:aws:secretsmanager:us-east-1:390281679530:secret:aidocmind-secrets-3h4GWi:DATABASE_URL::",
+                      "OPENAI_API_KEY": "arn:aws:secretsmanager:us-east-1:390281679530:secret:aidocmind-secrets-3h4GWi:OPENAI_API_KEY::",
+                      "JWT_SECRET_KEY": "arn:aws:secretsmanager:us-east-1:390281679530:secret:aidocmind-secrets-3h4GWi:JWT_SECRET_KEY::"
+                    }
+                  }
+                },
+                "AuthenticationConfiguration": {
+                  "AccessRoleArn": "arn:aws:iam::390281679530:role/AppRunnerECRAccessRole"
+                },
+                "AutoDeploymentsEnabled": false
+              }' \
+              --instance-configuration '{
+                "Cpu": "1 vCPU",
+                "Memory": "2 GB",
+                "InstanceRoleArn": "arn:aws:iam::390281679530:role/AppRunnerInstanceRole"
+              }' \
+              --region us-east-1
+          fi
